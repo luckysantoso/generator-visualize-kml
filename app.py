@@ -32,8 +32,8 @@ def get_folium_color_by_prb(prb_usage):
     try:
         prb = float(prb_usage)
         if prb > 80: return 'red'
-        elif 50 <= prb <= 80: return 'orange'
-        else: return 'green'
+        elif 50 <= prb <= 80: return 'yellow'
+        else: return 'blue'
     except (ValueError, TypeError): return 'grey'
 
 def clean_filename(name):
