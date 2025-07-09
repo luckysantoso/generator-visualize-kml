@@ -7,7 +7,7 @@ import math
 import io
 import re
 
-# --- Fungsi-Fungsi Helper (Tidak ada perubahan) ---
+# --- Fungsi-Fungsi Helper ---
 def get_destination_point(lon, lat, bearing, distance_km):
     R = 6371
     d = distance_km
@@ -48,13 +48,11 @@ Visualisasi peta interaktif akan dimuat hanya jika Anda menekannya agar aplikasi
 """)
 
 # --- Inisialisasi Session State ---
-# Ini digunakan untuk 'mengingat' aksi pengguna
 if 'show_visual' not in st.session_state:
     st.session_state.show_visual = False
 
 def toggle_visualization():
     st.session_state.show_visual = not st.session_state.show_visual
-
 # --- Sidebar ---
 st.sidebar.header("Unggah File Anda")
 uploaded_bts_file = st.sidebar.file_uploader("1. Unggah file data_bts (.csv)", type="csv")
@@ -66,7 +64,6 @@ if uploaded_bts_file and uploaded_rev_file:
         df_bts1 = pd.read_csv(uploaded_bts_file)
         rev_ioh_df = pd.read_csv(uploaded_rev_file)
         
-        # Proses penggabungan data
         df_bts1.columns = [col.lower() for col in df_bts1.columns]
         rev_ioh_df.columns = [col.lower() for col in rev_ioh_df.columns]
         if 'site id' in rev_ioh_df.columns:
@@ -76,7 +73,7 @@ if uploaded_bts_file and uploaded_rev_file:
             st.error("Error: Kolom 'site_id' tidak ditemukan.")
         else:
             combined_table = pd.merge(df_bts1, rev_ioh_df, on='site_id', how='right')
-            combined_table.dropna(how='all', inplace=True) # Hapus baris yang semua nilainya null
+            combined_table.dropna(how='all', inplace=True)
             st.success("✔️ File berhasil diunggah dan digabungkan.")
             
             required_cols = ['longitude', 'latitude', 'azimuth', 'beam', 'prb', 'sa cluster', 'site_id']
@@ -100,21 +97,72 @@ if uploaded_bts_file and uploaded_rev_file:
                         cluster_df = df_proc[df_proc['sa cluster'] == cluster]
                         kml = simplekml.Kml(name=f"Visualisasi Beam - {cluster}")
                         
+                        # Definisikan konstanta untuk pembuatan poligon
+                        BEAM_DISTANCE_KM = 0.5
+                        ARC_POINTS = 20
+                        
                         for _, row in cluster_df.iterrows():
-                            # Logika KML
+                            # Ambil data dari baris
+                            lon, lat = row['longitude'], row['latitude']
+                            azimuth, beam_width = row['azimuth'], row['beam']
+                            
+                            # Buat poligon baru di KML
                             pol = kml.newpolygon(name=str(row['site_id']))
-                            # ... (tambahkan deskripsi dan style KML Anda di sini jika perlu) ...
+                            
+                            # Tambahkan deskripsi
+                            pol.description = f"""
+                            <b>Site Sector:</b> {row.get('site_sectorid', 'N/A')}<br>
+                            <b>Site Name:</b> {row.get('sitename', 'N/A')}<br>
+                            <b>Site ID:</b> {row['site_id']}<br>
+                            <b>Enobid:</b> {row.get('enbid', 'N/A')}<br>
+                            <b>Longitude:</b> {lon}<br>
+                            <b>Latitude:</b> {lat}<br>
+                            <b>Azimuth:</b> {azimuth}°<br>
+                            <b>EUT:</b> {row.get('eut', 'N/A')}<br>
+                            <b>CQI:</b> {row.get('cqi', 'N/A')}<br>
+                            <b>TLP Partner:</b> {row.get('tlp', 'N/A')}<br>
+                            <b>FLP Partner:</b> {row.get('flp', 'N/A')}<br>
+                            <b>Transmission:</b> {row.get('transport_fo_mw', 'N/A')}<br>
+                            <b>Revenue IOH:</b> {row.get('prepaid_revenue_nett', 'N/A')}<br>
+                            <b>VLR IOH:</b> {row.get('vlr_subs_3id', 'N/A')}<br>
+                            <b>Battery:</b> {row.get('capacity_bank', 'N/A')}<br>
+                            <b>Height:</b> {row.get('ant_height', 'N/A')}<br>
+                            <b>Area:</b> {row.get('area', 'N/A')}<br>
+                            <b>Config Bandwith:</b> {row.get('config_bandwidth', 'N/A')}<br>
+                            <b>Beam Width:</b> {beam_width}°<br>
+                            <b>PRB Usage:</b> {row['prb']}%<br>
+                            <b>Cluster:</b> {cluster}
+                            """
+                            
+                            # === PERBAIKAN DIMULAI DI SINI ===
+                            # Logika untuk membuat koordinat poligon sektor
+                            start_angle = azimuth - (beam_width / 2)
+                            coords = [(lon, lat)] # Titik awal adalah tower
+                            step = beam_width / ARC_POINTS
+                            for i in range(ARC_POINTS + 1):
+                                angle = start_angle + i * step
+                                if angle < 0: angle += 360
+                                if angle >= 360: angle -= 360
+                                coords.append(get_destination_point(lon, lat, angle, BEAM_DISTANCE_KM))
+                            coords.append((lon, lat)) # Kembali ke tower untuk menutup poligon
+                            
+                            # Tetapkan koordinat dan style ke poligon
+                            pol.outerboundaryis = coords
                             pol.style.polystyle.color = get_kml_color_by_prb(row['prb'])
+                            pol.style.polystyle.outline = 1
+                            pol.style.linestyle.color = simplekml.Color.black
+                            pol.style.linestyle.width = 1
+                            # === PERBAIKAN SELESAI ===
 
                         st.download_button(
                             label=f"Unduh KML untuk Klaster: {clean_filename(str(cluster))}",
-                            data=kml.kml(), # Buat data KML langsung di sini
+                            data=kml.kml(),
                             file_name=f"{clean_filename(str(cluster))}_bts_coverage.kml",
                             mime="application/vnd.google-earth.kml+xml",
-                            key=f"kml_{cluster}" # Key unik untuk setiap tombol
+                            key=f"kml_{cluster}"
                         )
                 
-                st.markdown("---") # Garis pemisah
+                st.markdown("---")
 
                 # --- TOMBOL UNTUK MENAMPILKAN VISUALISASI ---
                 st.button(
@@ -125,7 +173,7 @@ if uploaded_bts_file and uploaded_rev_file:
                 # --- VISUALISASI PETA INTERAKTIF (Tampil jika tombol ditekan) ---
                 if st.session_state.show_visual and not df_proc.empty:
                     st.header("️Visualisasi Peta Interaktif")
-                    
+                    # (Sisa kode visualisasi tidak ada perubahan)
                     unique_clusters_map = sorted(df_proc['sa cluster'].dropna().unique())
                     options = ['Tampilkan Semua'] + unique_clusters_map
                     selected_cluster = st.selectbox(
@@ -144,23 +192,43 @@ if uploaded_bts_file and uploaded_rev_file:
                         m = folium.Map(location=map_center, zoom_start=12, tiles="cartodbdark_matter")
 
                         for _, row in df_to_display.iterrows():
-                            # Logika pembuatan poligon Folium
-                            lon, lat = row['longitude'], row['latitude']
-                            azimuth, beam_width = row['azimuth'], row['beam']
+                            lon, lat, azimuth, beam_width = row['longitude'], row['latitude'], row['azimuth'], row['beam']
                             start_angle = azimuth - (beam_width / 2)
-                            coords = [(lat, lon)]
+                            coords_folium = [(lat, lon)] # Folium: (lat, lon)
                             step = beam_width / 20
                             for i in range(20 + 1):
                                 angle = start_angle + i * step
                                 dest_lon, dest_lat = get_destination_point(lon, lat, angle, 0.5)
-                                coords.append((dest_lat, dest_lon))
-                            coords.append((lat, lon))
-
-                            popup_html = f"<b>Site ID:</b> {row['site_id']}<br><b>Cluster:</b> {row['sa cluster']}"
+                                coords_folium.append((dest_lat, dest_lon))
+                            coords_folium.append((lat, lon))
+                            
+                            popup_html = f"""
+                            <b>Site Sector:</b> {row.get('site_sectorid', 'N/A')}<br>
+                            <b>Site Name:</b> {row.get('sitename', 'N/A')}<br>
+                            <b>Site ID:</b> {row.get('site_id', 'N/A')}<br>
+                            <b>Enobid:</b> {row.get('enbid', 'N/A')}<br>
+                            <b>Longitude:</b> {row.get('longitude', 'N/A')}<br>
+                            <b>Latitude:</b> {row.get('latitude', 'N/A')}<br>
+                            <b>Azimuth:</b> {row.get('azimuth', 'N/A')}°<br>
+                            <b>EUT:</b> {row.get('eut', 'N/A')}<br>
+                            <b>CQI:</b> {row.get('cqi', 'N/A')}<br>
+                            <b>TLP Partner:</b> {row.get('tlp', 'N/A')}<br>
+                            <b>FLP Partner:</b> {row.get('flp', 'N/A')}<br>
+                            <b>Transmission:</b> {row.get('transport_fo_mw', 'N/A')}<br>
+                            <b>Revenue IOH:</b> {row.get('prepaid_revenue_nett', 'N/A')}<br>
+                            <b>VLR IOH:</b> {row.get('vlr_subs_3id', 'N/A')}<br>
+                            <b>Battery:</b> {row.get('capacity_bank', 'N/A')}<br>
+                            <b>Height:</b> {row.get('ant_height', 'N/A')}<br>
+                            <b>Area:</b> {row.get('area', 'N/A')}<br>
+                            <b>Config Bandwith:</b> {row.get('config_bandwidth', 'N/A')}<br>
+                            <b>Beam Width:</b> {row.get('beam', 'N/A')}°<br>
+                            <b>PRB Usage:</b> {row.get('prb', 'N/A')}%<br>
+                            <b>Cluster:</b> {row.get('sa cluster', 'N/A')}
+                            """
                             popup = folium.Popup(popup_html, max_width=300)
 
                             folium.Polygon(
-                                locations=coords,
+                                locations=coords_folium,
                                 color=get_folium_color_by_prb(row['prb']),
                                 weight=2,
                                 fill=True,
