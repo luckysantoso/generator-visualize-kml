@@ -87,7 +87,6 @@ if uploaded_bts_file and uploaded_rev_file:
                     df_proc[col] = pd.to_numeric(df_proc[col], errors='coerce')
                 df_proc.dropna(subset=cols_to_convert, inplace=True)
 
-                # --- PROSES PEMBUATAN FILE KML (TAMPIL SECARA DEFAULT) ---
                 st.header("📥 Unduh File KML per Klaster")
                 kml_clusters = df_proc['sa cluster'].dropna().unique()
                 if len(kml_clusters) == 0:
@@ -133,8 +132,7 @@ if uploaded_bts_file and uploaded_rev_file:
                             <b>PRB Usage:</b> {row['prb']}%<br>
                             <b>Cluster:</b> {cluster}
                             """
-                            
-                            # === PERBAIKAN DIMULAI DI SINI ===
+
                             # Logika untuk membuat koordinat poligon sektor
                             start_angle = azimuth - (beam_width / 2)
                             coords = [(lon, lat)] # Titik awal adalah tower
@@ -144,15 +142,14 @@ if uploaded_bts_file and uploaded_rev_file:
                                 if angle < 0: angle += 360
                                 if angle >= 360: angle -= 360
                                 coords.append(get_destination_point(lon, lat, angle, BEAM_DISTANCE_KM))
-                            coords.append((lon, lat)) # Kembali ke tower untuk menutup poligon
+                            coords.append((lon, lat)) 
                             
-                            # Tetapkan koordinat dan style ke poligon
+                           
                             pol.outerboundaryis = coords
                             pol.style.polystyle.color = get_kml_color_by_prb(row['prb'])
                             pol.style.polystyle.outline = 1
                             pol.style.linestyle.color = simplekml.Color.black
                             pol.style.linestyle.width = 1
-                            # === PERBAIKAN SELESAI ===
 
                         st.download_button(
                             label=f"Unduh KML untuk Klaster: {clean_filename(str(cluster))}",
@@ -164,13 +161,12 @@ if uploaded_bts_file and uploaded_rev_file:
                 
                 st.markdown("---")
 
-                # --- TOMBOL UNTUK MENAMPILKAN VISUALISASI ---
                 st.button(
                     "Tampilkan/Sembunyikan Visualisasi Peta 🗺️",
                     on_click=toggle_visualization
                 )
                 
-                # --- VISUALISASI PETA INTERAKTIF (Tampil jika tombol ditekan) ---
+                # --- VISUALISASI PETA INTERAKTIF ---
                 if st.session_state.show_visual and not df_proc.empty:
                     st.header("️Visualisasi Peta Interaktif")
                     # (Sisa kode visualisasi tidak ada perubahan)
